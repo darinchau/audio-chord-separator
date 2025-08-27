@@ -83,15 +83,12 @@ class ChordModelOutput:
     logits: torch.Tensor
     features: torch.Tensor
     duration: float
-    time_resolution: float  # In Hz (number of features per second)
 
     def save(self, path: str):
         np.savez_compressed(
             path,
             logits=self.logits.numpy(),
             features=self.features.numpy(),
-            time_resolution=self.time_resolution,
-            duration=self.duration
         )
 
     @staticmethod
@@ -101,12 +98,7 @@ class ChordModelOutput:
             duration=float(file['duration']),
             logits=torch.tensor(file['logits']),
             features=torch.tensor(file['features']),
-            time_resolution=float(file['time_resolution'])
         )
-
-    def __post_init__(self):
-        if self.time_resolution >= 1:
-            warnings.warn(f"Time resolution is greater than 1 Hz (found {self.time_resolution}). This is likely a bug.")
 
 
 class SmallBTCExtractor(ChordExtractor):
@@ -189,7 +181,13 @@ def inference(waveform: torch.Tensor, sr: int, config: Hyperparameters, mean, st
     while len(original_wav) > currunt_sec_hz + config.mp3['song_hz'] * config.mp3['inst_len']:
         start_idx = int(currunt_sec_hz)
         end_idx = int(currunt_sec_hz + config.mp3['song_hz'] * config.mp3['inst_len'])
-        tmp = librosa.cqt(original_wav[start_idx:end_idx], sr=sr, n_bins=config.feature['n_bins'], bins_per_octave=config.feature['bins_per_octave'], hop_length=config.feature['hop_length'])
+        tmp = librosa.cqt(
+            original_wav[start_idx:end_idx],
+            sr=sr,
+            n_bins=config.feature['n_bins'],
+            bins_per_octave=config.feature['bins_per_octave'],
+            hop_length=config.feature['hop_length']
+        )
         if start_idx == 0:
             feature = tmp
         else:
@@ -197,7 +195,18 @@ def inference(waveform: torch.Tensor, sr: int, config: Hyperparameters, mean, st
         currunt_sec_hz = end_idx
 
     # Concatenate the last part of the audio onto the feature
-    tmp = librosa.cqt(original_wav[currunt_sec_hz:], sr=sr, n_bins=config.feature['n_bins'], bins_per_octave=config.feature['bins_per_octave'], hop_length=config.feature['hop_length'])
+    try:
+        tmp = librosa.cqt(
+            original_wav[currunt_sec_hz:],
+            sr=sr,
+            n_bins=config.feature['n_bins'],
+            bins_per_octave=config.feature['bins_per_octave'],
+            hop_length=config.feature['hop_length']
+        )
+    except Exception:
+        # Last part is too short, pad one frame of silence
+        tmp = np.zeros((config.feature['n_bins'], 1), dtype=np.complex64)
+
     if currunt_sec_hz == 0:
         feature = tmp
     else:
@@ -235,5 +244,4 @@ def inference(waveform: torch.Tensor, sr: int, config: Hyperparameters, mean, st
         duration=audio_duration,
         logits=torch.tensor(logits),
         features=torch.tensor(features),
-        time_resolution=config.mp3['inst_len'] / config.model['timestep']
     )
