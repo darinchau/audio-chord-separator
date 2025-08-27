@@ -1,21 +1,20 @@
 import os
 import torch
-import librosa
 from dataclasses import dataclass
 from abc import ABC, abstractmethod
 
 
 class ChordExtractor(ABC):
-    @abstractmethod
     @staticmethod
+    @abstractmethod
     def get_latent_dimension() -> int:
         """
         Returns the dimension of the latent space used by the chord extractor. (=latent_dimension)
         """
         pass
 
-    @abstractmethod
     @staticmethod
+    @abstractmethod
     def get_feature_hz() -> float:
         """
         Returns the feature extraction rate in Hertz (Hz).
@@ -23,8 +22,8 @@ class ChordExtractor(ABC):
         """
         pass
 
-    @abstractmethod
     @staticmethod
+    @abstractmethod
     def get_mapping() -> list[str]:
         """
         Returns a mapping from class indices to chord labels.

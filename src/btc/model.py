@@ -114,7 +114,7 @@ class SmallBTCExtractor(ChordExtractor):
         model_path = os.path.join(os.path.dirname(__file__), 'pretrained', 'btc_model.pt')
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model, self.config, self.mean, self.std = get_model(model_path, self.device, use_voca=False)
-        fps = self.config.mp3['inst_len'] / self.config.model['timestep']
+        fps = self.config.model['timestep'] / self.config.mp3['inst_len']
         assert math.isclose(fps, self.get_feature_hz()), f"Feature hz ({self.get_feature_hz()}) does not match the model config ({fps})."
 
     @staticmethod
@@ -131,61 +131,48 @@ class SmallBTCExtractor(ChordExtractor):
 
     def extract_logits(self, audio: torch.Tensor, sr: int) -> torch.Tensor:
         logits = self.extract(audio, sr).logits
-        if logits.shape[0] != int(self.get_feature_hz() * audio.shape[-1] / sr):
-            raise ValueError(f"Logits length {logits.shape[0]} does not match expected length {int(self.get_feature_hz() * self.extract(audio, sr).duration)}.")
+        expected_length = int(self.get_feature_hz() * audio.shape[-1] / sr) + 1
+        if logits.shape[0] != expected_length:
+            raise ValueError(f"Logits length {logits.shape[0]} does not match expected length {expected_length}.")
+        if logits.shape[1] != len(self.get_mapping()):
+            raise ValueError(f"Logits dimension {logits.shape[1]} does not match expected dimension {len(self.get_mapping())}.")
         return logits
 
     def extract_latents(self, audio: torch.Tensor, sr: int) -> torch.Tensor:
         latents = self.extract(audio, sr).features
-        if latents.shape[0] != int(self.get_feature_hz() * audio.shape[-1] / sr):
-            raise ValueError(f"Latents length {latents.shape[0]} does not match expected length {int(self.get_feature_hz() * self.extract(audio, sr).duration)}.")
+        expected_length = int(self.get_feature_hz() * audio.shape[-1] / sr) + 1
+        if latents.shape[0] != expected_length:
+            raise ValueError(f"Latents length {latents.shape[0]} does not match expected length {expected_length}.")
         if latents.shape[1] != self.get_latent_dimension():
             raise ValueError(f"Latents dimension {latents.shape[1]} does not match expected dimension {self.get_latent_dimension()}.")
         return latents
 
     def extract(self, waveform: torch.Tensor, sr: int) -> ChordModelOutput:
+        """ Extracts logits and features from the given waveform.
+
+        Args:
+            waveform (torch.Tensor): The input audio tensor in shape (n_channels, n_samples)
+            sr (int): The sample rate of the audio.
+        Returns:
+            ChordModelOutput: The extracted logits and features.
+        """
+        waveform = waveform.mean(dim=0) if waveform.ndim == 2 else waveform  # Convert to mono if stereo
         device = next(self.model.parameters()).device
         waveform = waveform.to(device)
         return inference(waveform, sr, self.config, self.mean, self.std, self.model)
 
 
-class LargeBTCExtractor(ChordExtractor):
+class LargeBTCExtractor(SmallBTCExtractor):
     def __init__(self):
         model_path = os.path.join(os.path.dirname(__file__), 'pretrained', 'btc_model_large_voca.pt')
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model, self.config, self.mean, self.std = get_model(model_path, self.device, use_voca=True)
-        fps = self.config.mp3['inst_len'] / self.config.model['timestep']
+        fps = self.config.model['timestep'] / self.config.mp3['inst_len']
         assert math.isclose(fps, self.get_feature_hz()), f"Feature hz ({self.get_feature_hz()}) does not match the model config ({fps})."
-
-    @staticmethod
-    def get_latent_dimension() -> int:
-        return 128
-
-    @staticmethod
-    def get_feature_hz() -> float:
-        return 10.8
 
     @staticmethod
     def get_mapping() -> list[str]:
         return get_voca()
-
-    def extract_logits(self, audio: torch.Tensor, sr: int) -> torch.Tensor:
-        logits = self.extract(audio, sr).logits
-        if logits.shape[0] != int(self.get_feature_hz() * audio.shape[-1] / sr):
-            raise ValueError(f"Logits length {logits.shape[0]} does not match expected length {int(self.get_feature_hz() * self.extract(audio, sr).duration)}.")
-        return logits
-
-    def extract_latents(self, audio: torch.Tensor, sr: int) -> torch.Tensor:
-        latents = self.extract(audio, sr).features
-        if latents.shape[0] != int(self.get_feature_hz() * audio.shape[-1] / sr):
-            raise ValueError(f"Latents length {latents.shape[0]} does not match expected length {int(self.get_feature_hz() * self.extract(audio, sr).duration)}.")
-        if latents.shape[1] != self.get_latent_dimension():
-            raise ValueError(f"Latents dimension {latents.shape[1]} does not match expected dimension {self.get_latent_dimension()}.")
-        return latents
-
-    def extract(self, waveform: torch.Tensor, sr: int) -> ChordModelOutput:
-        waveform = waveform.to(self.device)
-        return inference(waveform, sr, self.config, self.mean, self.std, self.model)
 
 
 def inference(waveform: torch.Tensor, sr: int, config: Hyperparameters, mean, std, model) -> ChordModelOutput:
@@ -217,7 +204,8 @@ def inference(waveform: torch.Tensor, sr: int, config: Hyperparameters, mean, st
         feature = np.concatenate((feature, tmp), axis=1)
 
     feature = np.log(np.abs(feature) + 1e-6)
-    feature_per_second = config.mp3['inst_len'] / config.model['timestep']
+
+    num_features = feature.shape[1]
 
     # Process features
     feature = feature.T
@@ -241,9 +229,11 @@ def inference(waveform: torch.Tensor, sr: int, config: Hyperparameters, mean, st
             logits.append(logit)
     features = torch.cat(features, dim=1)[0].cpu().numpy()
     logits = torch.cat(logits, dim=1)[0].cpu().numpy()
+    features = features[:num_features, :]
+    logits = logits[:num_features, :]
     return ChordModelOutput(
         duration=audio_duration,
         logits=torch.tensor(logits),
         features=torch.tensor(features),
-        time_resolution=feature_per_second
+        time_resolution=config.mp3['inst_len'] / config.model['timestep']
     )
