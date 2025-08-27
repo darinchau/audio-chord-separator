@@ -1,6 +1,7 @@
 # Contains the definition of the Chord BTC model
 # Code originally taken from https://github.com/jayg996/BTC-ISMIR19/tree/master
 
+from .utils import get_small_voca, get_voca
 import os
 import torch
 import librosa
@@ -10,6 +11,8 @@ from .chord_modules import *
 import warnings
 import numpy as np
 import torchaudio.functional as F
+from ..base import ChordExtractor
+import math
 
 
 @dataclass
@@ -106,16 +109,92 @@ class ChordModelOutput:
             warnings.warn(f"Time resolution is greater than 1 Hz (found {self.time_resolution}). This is likely a bug.")
 
 
-def inference(waveform: torch.Tensor, sr: int, model_path: str, *, use_voca: bool = True) -> ChordModelOutput:
+class SmallBTCExtractor(ChordExtractor):
+    def __init__(self):
+        model_path = os.path.join(os.path.dirname(__file__), 'pretrained', 'btc_model.pt')
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.model, self.config, self.mean, self.std = get_model(model_path, self.device, use_voca=False)
+        fps = self.config.mp3['inst_len'] / self.config.model['timestep']
+        assert math.isclose(fps, self.get_feature_hz()), f"Feature hz ({self.get_feature_hz()}) does not match the model config ({fps})."
+
+    @staticmethod
+    def get_latent_dimension() -> int:
+        return 128
+
+    @staticmethod
+    def get_feature_hz() -> float:
+        return 10.8
+
+    @staticmethod
+    def get_mapping() -> list[str]:
+        return get_small_voca()
+
+    def extract_logits(self, audio: torch.Tensor, sr: int) -> torch.Tensor:
+        logits = self.extract(audio, sr).logits
+        if logits.shape[0] != int(self.get_feature_hz() * audio.shape[-1] / sr):
+            raise ValueError(f"Logits length {logits.shape[0]} does not match expected length {int(self.get_feature_hz() * self.extract(audio, sr).duration)}.")
+        return logits
+
+    def extract_latents(self, audio: torch.Tensor, sr: int) -> torch.Tensor:
+        latents = self.extract(audio, sr).features
+        if latents.shape[0] != int(self.get_feature_hz() * audio.shape[-1] / sr):
+            raise ValueError(f"Latents length {latents.shape[0]} does not match expected length {int(self.get_feature_hz() * self.extract(audio, sr).duration)}.")
+        if latents.shape[1] != self.get_latent_dimension():
+            raise ValueError(f"Latents dimension {latents.shape[1]} does not match expected dimension {self.get_latent_dimension()}.")
+        return latents
+
+    def extract(self, waveform: torch.Tensor, sr: int) -> ChordModelOutput:
+        device = next(self.model.parameters()).device
+        waveform = waveform.to(device)
+        return inference(waveform, sr, self.config, self.mean, self.std, self.model)
+
+
+class LargeBTCExtractor(ChordExtractor):
+    def __init__(self):
+        model_path = os.path.join(os.path.dirname(__file__), 'pretrained', 'btc_model_large_voca.pt')
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.model, self.config, self.mean, self.std = get_model(model_path, self.device, use_voca=True)
+        fps = self.config.mp3['inst_len'] / self.config.model['timestep']
+        assert math.isclose(fps, self.get_feature_hz()), f"Feature hz ({self.get_feature_hz()}) does not match the model config ({fps})."
+
+    @staticmethod
+    def get_latent_dimension() -> int:
+        return 128
+
+    @staticmethod
+    def get_feature_hz() -> float:
+        return 10.8
+
+    @staticmethod
+    def get_mapping() -> list[str]:
+        return get_voca()
+
+    def extract_logits(self, audio: torch.Tensor, sr: int) -> torch.Tensor:
+        logits = self.extract(audio, sr).logits
+        if logits.shape[0] != int(self.get_feature_hz() * audio.shape[-1] / sr):
+            raise ValueError(f"Logits length {logits.shape[0]} does not match expected length {int(self.get_feature_hz() * self.extract(audio, sr).duration)}.")
+        return logits
+
+    def extract_latents(self, audio: torch.Tensor, sr: int) -> torch.Tensor:
+        latents = self.extract(audio, sr).features
+        if latents.shape[0] != int(self.get_feature_hz() * audio.shape[-1] / sr):
+            raise ValueError(f"Latents length {latents.shape[0]} does not match expected length {int(self.get_feature_hz() * self.extract(audio, sr).duration)}.")
+        if latents.shape[1] != self.get_latent_dimension():
+            raise ValueError(f"Latents dimension {latents.shape[1]} does not match expected dimension {self.get_latent_dimension()}.")
+        return latents
+
+    def extract(self, waveform: torch.Tensor, sr: int) -> ChordModelOutput:
+        waveform = waveform.to(self.device)
+        return inference(waveform, sr, self.config, self.mean, self.std, self.model)
+
+
+def inference(waveform: torch.Tensor, sr: int, config: Hyperparameters, mean, std, model) -> ChordModelOutput:
     # Handle audio and resample to the requied sr
     audio_duration = waveform.shape[-1] / sr
     original_wav: np.ndarray = F.resample(waveform, sr, 22050).numpy()
     sr = 22050
 
-    # Load the model
-    # TODO: Profile this function to see if model caching is necessary
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model, config, mean, std = get_model(model_path, device, use_voca)
+    device = waveform.device
 
     # Compute audio features
     currunt_sec_hz = 0

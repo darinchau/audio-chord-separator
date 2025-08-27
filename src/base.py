@@ -16,7 +16,7 @@ class ChordExtractor(ABC):
 
     @abstractmethod
     @staticmethod
-    def get_feature_hz() -> int:
+    def get_feature_hz() -> float:
         """
         Returns the feature extraction rate in Hertz (Hz).
         It should be the case int(n_samples / sr * feature_hz) = n_frames.
@@ -25,9 +25,9 @@ class ChordExtractor(ABC):
 
     @abstractmethod
     @staticmethod
-    def get_mapping() -> dict[int, str]:
+    def get_mapping() -> list[str]:
         """
-        Returns a dictionary mapping class indices to chord labels.
+        Returns a mapping from class indices to chord labels.
         """
         pass
 
@@ -41,11 +41,10 @@ class ChordExtractor(ABC):
             sr (int): The sample rate of the audio.
 
         Returns:
-            torch.Tensor: A tensor containing the extracted chords in shape (latent_dimension, n_classes).
+            torch.Tensor: A tensor containing the extracted chords in shape (n_frames, n_classes).
         """
         pass
 
-    @abstractmethod
     def extract_chords(self, audio: torch.Tensor, sr: int) -> torch.Tensor:
         """
         Extracts chords from the given audio tensor.
@@ -57,7 +56,7 @@ class ChordExtractor(ABC):
         Returns:
             torch.Tensor: A int ensor containing the extracted chords in shape (n_frames,).
         """
-        pass
+        return torch.argmax(self.extract_logits(audio, sr), dim=-1)
 
     @abstractmethod
     def extract_latents(self, audio: torch.Tensor, sr: int) -> torch.Tensor:
