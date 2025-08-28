@@ -12,6 +12,7 @@ from typing import Any
 import random
 import warnings
 from tqdm import tqdm
+import gc
 
 from src.mel.model import LogMelSpectrogram, MelChordModel
 from src.btc.model import LargeBTCExtractor
@@ -48,6 +49,7 @@ class TrainMelConfig:
     resume_from: str | None = None  # Path to checkpoint to resume training from
     save_interval: int = 10_000  # Steps between saving model checkpoints
     val_interval: int = 1_000  # Steps between validation runs
+    clear_cuda_cache_interval: int = 100  # Steps between clearing CUDA cache
     num_workers: int = 4  # Number of DataLoader workers
     save_dir: str = "./checkpoints"  # Directory to save model checkpoints
     use_wandb: bool = True  # Whether to use Weights & Biases for logging
@@ -148,6 +150,7 @@ def parse_args() -> TrainMelConfig:
     parser.add_argument('--resume_from', type=str, default=None, help='Path to checkpoint to resume training from')
     parser.add_argument('--save_interval', type=int, default=10_000, help='Steps between saving model checkpoints')
     parser.add_argument('--val_interval', type=int, default=1_000, help='Steps between validation runs')
+    parser.add_argument('--clear_cuda_cache_interval', type=int, default=100, help='Steps between clearing CUDA cache')
     parser.add_argument('--num_workers', type=int, default=4, help='Number of DataLoader workers')
     parser.add_argument('--save_dir', type=str, default='./checkpoints', help='Directory to save model checkpoints')
     parser.add_argument('--use_wandb', action='store_true', help='Whether to use Weights & Biases for logging')
@@ -161,6 +164,7 @@ def parse_args() -> TrainMelConfig:
         resume_from=args.resume_from,
         save_interval=args.save_interval,
         val_interval=args.val_interval,
+        clear_cuda_cache_interval=args.clear_cuda_cache_interval,
         num_workers=args.num_workers,
         save_dir=args.save_dir,
         use_wandb=args.use_wandb
@@ -290,6 +294,10 @@ def train(
                 os.makedirs(config.save_dir, exist_ok=True)
                 save_checkpoint(model, optimizer, config.save_dir, global_step, config)
                 print(f"Saved checkpoint at step {global_step}")
+
+            if global_step % config.clear_cuda_cache_interval == 0:
+                torch.cuda.empty_cache()
+                gc.collect()
 
             if global_step >= config.max_step:
                 stop_training = True
