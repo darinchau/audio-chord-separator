@@ -4,3 +4,12 @@ numpy
 torchaudio
 librosa
 tqdm
+datasets>=3.5.1
+matplotlib>=3.8.4
+numba>=0.57.1
+pydub>=0.25.1
+python-dotenv>=1.0.1
+requests>=2.31.0
+sounddevice>=0.4.6
+soundfile>=0.12.1
+yt-dlp

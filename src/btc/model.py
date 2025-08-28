@@ -123,7 +123,7 @@ class SmallBTCExtractor(ChordExtractor):
 
     def extract_logits(self, audio: torch.Tensor, sr: int) -> torch.Tensor:
         logits = self.extract(audio, sr).logits
-        expected_length = int(self.get_feature_hz() * audio.shape[-1] / sr) + 1
+        expected_length = math.ceil(self.get_feature_hz() * audio.shape[-1] / sr)
         if logits.shape[0] != expected_length:
             raise ValueError(f"Logits length {logits.shape[0]} does not match expected length {expected_length}.")
         if logits.shape[1] != len(self.get_mapping()):
@@ -132,9 +132,9 @@ class SmallBTCExtractor(ChordExtractor):
 
     def extract_latents(self, audio: torch.Tensor, sr: int) -> torch.Tensor:
         latents = self.extract(audio, sr).features
-        expected_length = int(self.get_feature_hz() * audio.shape[-1] / sr) + 1
+        expected_length = math.ceil(self.get_feature_hz() * audio.shape[-1] / sr)
         if latents.shape[0] != expected_length:
-            raise ValueError(f"Latents length {latents.shape[0]} does not match expected length {expected_length}.")
+            raise ValueError(f"Latents length {latents.shape[0]} does not match expected length {expected_length} (input shape: {audio.shape}).")
         if latents.shape[1] != self.get_latent_dimension():
             raise ValueError(f"Latents dimension {latents.shape[1]} does not match expected dimension {self.get_latent_dimension()}.")
         return latents

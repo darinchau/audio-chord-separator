@@ -5,25 +5,25 @@ from torchaudio.transforms import MelScale
 from dataclasses import dataclass
 
 
-@dataclass(frozen=True)
-class MelChordModelConfig:
-    # Audio processing parameters
-    sr: int  # Sample rate of the audio input
-    n_fft: int  # Number of FFT components for STFT
-    hop_length: int  # Number of audio samples between adjacent STFT columns
-    win_length: int  # Size of window function for STFT
-    n_mels: int  # Number of mel filter banks
-    f_min: float  # Lowest frequency (Hz) for mel scale
-    f_max: float  # Highest frequency (Hz) for mel scale
+# @dataclass(frozen=True)
+# class MelChordModelConfig:
+#     # Audio processing parameters
+#     sr: int  # Sample rate of the audio input
+#     n_fft: int  # Number of FFT components for STFT
+#     hop_length: int  # Number of audio samples between adjacent STFT columns
+#     win_length: int  # Size of window function for STFT
+#     n_mels: int  # Number of mel filter banks
+#     f_min: float  # Lowest frequency (Hz) for mel scale
+#     f_max: float  # Highest frequency (Hz) for mel scale
 
-    # Model architecture parameters
-    latent_dim: int  # Dimensionality of the model's hidden representations
-    layer_dropout: float = 0.2  # Dropout rate applied between transformer layers
-    attention_dropout: float = 0.2  # Dropout rate within attention mechanisms
-    relu_dropout: float = 0.2  # Dropout rate in feed-forward ReLU layers
-    num_layers: int = 8  # Number of transformer/attention layers in the model
-    num_heads: int = 4  # Number of attention heads in multi-head attention
-    max_seq_len: int = 1024  # Maximum sequence length for positional encoding
+#     # Model architecture parameters
+#     latent_dim: int  # Dimensionality of the model's hidden representations
+#     layer_dropout: float = 0.2  # Dropout rate applied between transformer layers
+#     attention_dropout: float = 0.2  # Dropout rate within attention mechanisms
+#     relu_dropout: float = 0.2  # Dropout rate in feed-forward ReLU layers
+#     num_layers: int = 8  # Number of transformer/attention layers in the model
+#     num_heads: int = 4  # Number of attention heads in multi-head attention
+#     max_seq_len: int = 1024  # Maximum sequence length for positional encoding
 
 
 class LinearSpectrogram(nn.Module):
@@ -175,22 +175,29 @@ class RotaryPositionalEncoding(nn.Module):
 
 
 class MelChordModel(nn.Module):
-    def __init__(self, config: MelChordModelConfig):
+    def __init__(
+        self,
+        n_mels: int,
+        hidden_size: int,
+        layer_dropout: float,
+        attention_dropout: float,
+        num_layers: int,
+        num_heads: int,
+        max_seq_len: int,
+    ):
         super().__init__()
-        self.config = config
-
-        self.input_proj = nn.Linear(config.n_mels, config.latent_dim)
-        self.positional_encoding = RotaryPositionalEncoding(config.latent_dim, config.max_seq_len)
+        self.input_proj = nn.Linear(n_mels, hidden_size)
+        self.positional_encoding = RotaryPositionalEncoding(hidden_size, max_seq_len)
 
         self.layers = nn.ModuleList([
             SelfAttentionBlock(
-                config.latent_dim,
-                config.num_heads,
-                config.attention_dropout
-            ) for _ in range(config.num_layers)
+                hidden_size,
+                num_heads,
+                attention_dropout
+            ) for _ in range(num_layers)
         ])
 
-        self.dropout = nn.Dropout(config.layer_dropout)
+        self.dropout = nn.Dropout(layer_dropout)
 
     def forward(self, x: Tensor) -> Tensor:
         x = self.input_proj(x)
