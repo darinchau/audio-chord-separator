@@ -149,9 +149,7 @@ class SmallBTCExtractor(ChordExtractor):
             ChordModelOutput: The extracted logits and features.
         """
         waveform = waveform.mean(dim=0) if waveform.ndim == 2 else waveform  # Convert to mono if stereo
-        device = next(self.model.parameters()).device
-        waveform = waveform.to(device)
-        return inference(waveform, sr, self.config, self.mean, self.std, self.model)
+        return inference(waveform, sr, self.config, self.mean, self.std, self.model, self.device)
 
 
 class LargeBTCExtractor(SmallBTCExtractor):
@@ -167,13 +165,11 @@ class LargeBTCExtractor(SmallBTCExtractor):
         return get_voca()
 
 
-def inference(waveform: torch.Tensor, sr: int, config: Hyperparameters, mean, std, model) -> ChordModelOutput:
+def inference(waveform: torch.Tensor, sr: int, config: Hyperparameters, mean, std, model, device) -> ChordModelOutput:
     # Handle audio and resample to the requied sr
     audio_duration = waveform.shape[-1] / sr
-    original_wav: np.ndarray = F.resample(waveform, sr, 22050).numpy()
+    original_wav: np.ndarray = F.resample(waveform, sr, 22050).detach().cpu().numpy()
     sr = 22050
-
-    device = waveform.device
 
     # Compute audio features
     currunt_sec_hz = 0
