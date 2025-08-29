@@ -108,12 +108,15 @@ class AudioChordLatentDataset(Dataset):
     def __len__(self) -> int:
         return len(self.urls)
 
-    def __getitem__(self, idx: int) -> tuple[Tensor, Tensor]:
+    def get_mel_spec_latents(self, idx: int) -> tuple[Tensor, Tensor]:
         url = self.urls[idx]
         audio_path = get_filepath(AUDIO_DIR, url.video_id)
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            audio, _ = load_audio(audio_path, sr=self.sr)
+            try:
+                audio, _ = load_audio(audio_path, sr=self.sr)
+            except Exception as e:
+                raise ValueError(f"Failed to load audio for {audio_path}") from e
         if audio is None:
             raise ValueError(f"Failed to load audio for URL: {url}")
         starting = random.randint(0, max(0, audio.shape[-1] - self.segment_length))
@@ -139,6 +142,14 @@ class AudioChordLatentDataset(Dataset):
         melspec = melspec.T  # (T1, n_mels)
 
         return melspec, latents
+
+    def __getitem__(self, idx: int) -> tuple[Tensor, Tensor]:
+        while True:
+            try:
+                return self.get_mel_spec_latents(idx)
+            except Exception as e:
+                idx = random.randint(0, len(self.urls) - 1)
+                print(f"Warning: {e}. Retrying with segment {idx}.")
 
 
 def parse_args() -> TrainMelConfig:

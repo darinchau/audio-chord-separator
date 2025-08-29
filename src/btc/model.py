@@ -102,9 +102,11 @@ class ChordModelOutput:
 
 
 class SmallBTCExtractor(ChordExtractor):
-    def __init__(self):
+    def __init__(self, device: torch.device | None = None):
+        if device is None:
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = device
         model_path = os.path.join(os.path.dirname(__file__), 'pretrained', 'btc_model.pt')
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model, self.config, self.mean, self.std = get_model(model_path, self.device, use_voca=False)
         fps = self.config.model['timestep'] / self.config.mp3['inst_len']
         assert math.isclose(fps, self.get_feature_hz()), f"Feature hz ({self.get_feature_hz()}) does not match the model config ({fps})."
@@ -153,9 +155,11 @@ class SmallBTCExtractor(ChordExtractor):
 
 
 class LargeBTCExtractor(SmallBTCExtractor):
-    def __init__(self):
+    def __init__(self, device: torch.device | None = None):
+        if device is None:
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = device
         model_path = os.path.join(os.path.dirname(__file__), 'pretrained', 'btc_model_large_voca.pt')
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model, self.config, self.mean, self.std = get_model(model_path, self.device, use_voca=True)
         fps = self.config.model['timestep'] / self.config.mp3['inst_len']
         assert math.isclose(fps, self.get_feature_hz()), f"Feature hz ({self.get_feature_hz()}) does not match the model config ({fps})."
