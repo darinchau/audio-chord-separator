@@ -1,4 +1,3 @@
-import wandb
 import os
 import math
 import torch
@@ -13,11 +12,15 @@ import random
 import warnings
 from tqdm import tqdm
 import gc
+import wandb
+import dotenv
 
 from src.mel.model import LogMelSpectrogram, MelChordModel
 from src.btc.model import LargeBTCExtractor
 from src.dataset.src import YouTubeURL, AUDIO_DIR, load_audio, iterate_urls
 from src.dataset.src.util import get_filepath
+
+dotenv.load_dotenv()
 
 
 @dataclass(frozen=True)
@@ -47,8 +50,8 @@ class TrainMelConfig:
     learning_rate: float = 1e-4
     segment_duration: float = 10.0
     resume_from: str | None = None  # Path to checkpoint to resume training from
-    save_interval: int = 10_000  # Steps between saving model checkpoints
-    val_interval: int = 1_000  # Steps between validation runs
+    save_interval: int = 1000  # Steps between saving model checkpoints
+    val_interval: int = 500  # Steps between validation runs
     clear_cuda_cache_interval: int = 100  # Steps between clearing CUDA cache
     num_workers: int = 4  # Number of DataLoader workers
     save_dir: str = "./checkpoints"  # Directory to save model checkpoints
@@ -159,8 +162,8 @@ def parse_args() -> TrainMelConfig:
     parser.add_argument('--learning_rate', type=float, default=1e-4, help='Learning rate for the optimizer')
     parser.add_argument('--segment_duration', type=float, default=10.0, help='Duration of audio segments in seconds')
     parser.add_argument('--resume_from', type=str, default=None, help='Path to checkpoint to resume training from')
-    parser.add_argument('--save_interval', type=int, default=10_000, help='Steps between saving model checkpoints')
-    parser.add_argument('--val_interval', type=int, default=1_000, help='Steps between validation runs')
+    parser.add_argument('--save_interval', type=int, default=1000, help='Steps between saving model checkpoints')
+    parser.add_argument('--val_interval', type=int, default=500, help='Steps between validation runs')
     parser.add_argument('--clear_cuda_cache_interval', type=int, default=100, help='Steps between clearing CUDA cache')
     parser.add_argument('--num_workers', type=int, default=4, help='Number of DataLoader workers')
     parser.add_argument('--save_dir', type=str, default='./checkpoints', help='Directory to save model checkpoints')
@@ -197,22 +200,27 @@ def validate(
 ) -> float:
     model.eval()
     total_loss = 0.0
+    count = 0
     with torch.no_grad():
-        for melspecs, latents in dataloader:
+        for melspecs, latents in tqdm(dataloader, desc="Validation", unit="batch"):
             melspecs = melspecs.to(device)
             latents = latents.to(device)
             outputs = model(melspecs)
             loss = criterion(outputs, latents)
             total_loss += loss.item() * melspecs.size(0)
-    return total_loss / len(dataloader)
+            count += melspecs.size(0)
+    return total_loss / count if count > 0 else float('inf')
 
 
 def get_dataloaders(
     config: TrainMelConfig,
 ) -> tuple[DataLoader, DataLoader]:
     urls = list(iterate_urls())
-    train_urls = [url for url in urls if not url.video_id.endswith("_")]
-    val_urls = [url for url in urls if url.video_id.endswith("_")]
+    train_urls = [url for url in urls if not url.video_id.endswith("Q")]
+    val_urls = [url for url in urls if url.video_id.endswith("0Q")]
+
+    print(f"Total URLs: {len(urls)}, Train: {len(train_urls)}, Val: {len(val_urls)}")
+
     train_dataset = AudioChordLatentDataset(config, train_urls)
     val_dataset = AudioChordLatentDataset(config, val_urls)
 
@@ -337,6 +345,7 @@ def main():
         global_step = load_checkpoint(model, optimizer, config.resume_from)
 
     if config.use_wandb:
+        wandb.login(key=os.environ.get("WANDB_API_KEY", None))
         wandb.init(project="mel-to-chord-latent", config=asdict(config))
 
     try:
