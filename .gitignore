@@ -73,3 +73,5 @@ nohup.out
 .vscode
 *.ipynb
 !demo.ipynb
+
+checkpoints

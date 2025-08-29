@@ -19,6 +19,7 @@ from src.mel.model import LogMelSpectrogram, MelChordModel
 from src.btc.model import LargeBTCExtractor
 from src.dataset.src import YouTubeURL, AUDIO_DIR, load_audio, iterate_urls
 from src.dataset.src.util import get_filepath
+from src.gpu_limiter import wait_until_gpu_drops_below_temp
 
 dotenv.load_dotenv()
 
@@ -289,6 +290,7 @@ def train(
     stop_training = False
     while True:
         for melspecs, latents in train_loader:
+            wait_until_gpu_drops_below_temp()
             model.train()
             melspecs = melspecs.to(device)
             latents = latents.to(device)

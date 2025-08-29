@@ -1,3 +1,6 @@
 [submodule "src/dataset"]
 	path = src/dataset
 	url = https://github.com/darinchau/audio-dataset-processor.git
+[submodule "src/gpu_limiter"]
+	path = src/gpu_limiter
+	url = https://github.com/darinchau/gpu_limiter.git
