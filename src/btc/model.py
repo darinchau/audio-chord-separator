@@ -139,16 +139,13 @@ class SmallBTCExtractor(ChordExtractor):
             ChordModelOutput: The extracted logits and features.
         """
         waveform = waveform.mean(dim=0) if waveform.ndim == 2 else waveform  # Convert to mono if stereo
+        if waveform.ndim != 1:
+            raise ValueError(f"Input waveform must be 1D or 2D tensor, but got {waveform.shape} tensor.")
         results = inference(waveform, sr, self.config, self.mean, self.std, self.model, self.device)
         latents = results.features
-        expected_length = math.ceil(self.get_feature_hz() * waveform.shape[-1] / sr)
-        if latents.shape[0] != expected_length:
-            raise ValueError(f"Latents length {latents.shape[0]} does not match expected length {expected_length} (input shape: {waveform.shape}).")
         if latents.shape[1] != self.get_latent_dimension():
             raise ValueError(f"Latents dimension {latents.shape[1]} does not match expected dimension {self.get_latent_dimension()}.")
         logits = results.logits
-        if logits.shape[0] != expected_length:
-            raise ValueError(f"Logits length {logits.shape[0]} does not match expected length {expected_length}.")
         if logits.shape[1] != len(self.get_mapping()):
             raise ValueError(f"Logits dimension {logits.shape[1]} does not match expected dimension {len(self.get_mapping())}.")
         return results
