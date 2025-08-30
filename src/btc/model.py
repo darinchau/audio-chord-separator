@@ -201,7 +201,7 @@ def inference(waveform: torch.Tensor, sr: int, config: Hyperparameters, mean, st
             hop_length=config.feature['hop_length']
         )
     except Exception:
-        # Last part is too short, pad one frame of silence
+        print(f"Warning: CQT failed at the end of the audio ({waveform.shape}) at {currunt_sec_hz} samples. Padding with zeros.")
         tmp = np.zeros((config.feature['n_bins'], 1), dtype=np.complex64)
 
     if currunt_sec_hz == 0:
